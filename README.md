@@ -1,4 +1,4 @@
-# Nano Whiteboard Doctor
+# Whiteboard Makeover
 
 A desktop GUI tool that transforms messy whiteboard photos into clean, polished graphics using [Fal AI's Nano Banana 2](https://fal.ai/models/fal-ai/nano-banana-2/edit) image-to-image model.
 
@@ -27,13 +27,24 @@ More samples available in the [Sample-Whiteboards](https://github.com/danielrose
 
 ## What It Does
 
-Take a photo of your messy whiteboard and Nano Whiteboard Doctor will:
+Take a photo of your messy whiteboard and Whiteboard Makeover will:
 - Clean up handwriting and sketches
 - Add polished labels and icons
 - Produce a professional-looking diagram
 - Apply any of **24 built-in style presets** or a fully custom prompt
 
 Supports **single image** or **batch processing** of multiple whiteboard photos at once.
+
+## Features
+
+- **24 style presets** across 5 categories (Professional, Creative, Technical, Retro & Fun, Language)
+- **Word dictionary** -- double-click any input image to add terms the AI should spell correctly
+- **Click-to-enlarge** result thumbnails with full-size viewer
+- **Send back for touchups** -- re-process from the enlarged view (creates versioned outputs)
+- **Animated processing indicator** so you know it's working
+- **Drag-and-drop** images or folders (Wayland-compatible)
+- **CLI mode** for batch processing from the terminal
+- **Help page** (Help > How to Use) documenting all features
 
 ## Screenshot
 
@@ -52,6 +63,7 @@ Supports **single image** or **batch processing** of multiple whiteboard photos 
 | Hand-Drawn Polished | Refined sketch -- designer's notebook feel |
 | Minimalist Mono | Black and white, Bauhaus-inspired minimalism |
 | Ultra Sleek | Thin lines, Swiss design aesthetic |
+| Blog Hero | Gradient background, 16:9 blog featured image |
 
 ### Creative
 
@@ -75,7 +87,7 @@ Supports **single image** or **batch processing** of multiple whiteboard photos 
 | Dark Mode Technical | Engineering diagram on dark background |
 | Flat Material | Google Material Design flat UI style |
 | GitHub README | Markdown-friendly, repo architecture overview |
-| Photographic | Photorealistic 3D render with glass and metal |
+| Photographic 3D | Photorealistic 3D render with glass and metal |
 | Terminal Hacker | Green-on-black phosphor CRT terminal |
 | Visionary Inspirational | Cosmic/futurist keynote aesthetic |
 
@@ -103,8 +115,8 @@ Supports **single image** or **batch processing** of multiple whiteboard photos 
 Download the `.deb` from [Releases](https://github.com/danielrosehill/Nano-Whiteboard-Doctor/releases) and install:
 
 ```bash
-sudo dpkg -i nano-whiteboard-doctor_0.1.0_all.deb
-nano-whiteboard-doctor
+sudo dpkg -i whiteboard-makeover_0.2.0_all.deb
+whiteboard-makeover
 ```
 
 ### Option B: Run from source with uv
@@ -113,27 +125,31 @@ nano-whiteboard-doctor
 git clone https://github.com/danielrosehill/Nano-Whiteboard-Doctor.git
 cd Nano-Whiteboard-Doctor
 uv sync
-uv run nano-whiteboard-doctor
+uv run whiteboard-makeover
 ```
 
 ### Get a Fal AI API key
 
-Sign up at [fal.ai](https://fal.ai) and grab your API key from the dashboard. On first run, you'll be prompted to enter it. The key is saved locally in `~/.config/nano-whiteboard-doctor/config.json`.
+Sign up at [fal.ai](https://fal.ai) and grab your API key from the dashboard. On first run, you'll be prompted to enter it. The key is saved locally in `~/.config/whiteboard-makeover/config.json`.
 
 ## Usage
 
-1. Click **Add Images** to select one or more whiteboard photos
-2. Choose a **Style Preset** from the dropdown (or write a custom prompt)
-3. (Optional) Adjust output format, resolution, and aspect ratio
-4. Click **Process** to send them through the AI
-5. Cleaned images are saved to your chosen output directory
+1. Click **Add Images** or drag and drop whiteboard photos
+2. (Optional) **Double-click** an image to add a word dictionary for tricky terms
+3. Choose a **Style Preset** from the dropdown (or write a custom prompt)
+4. (Optional) Adjust output format, resolution, and aspect ratio
+5. Click **Process** -- an animated indicator shows progress
+6. **Click any result thumbnail** to view it full-size
+7. From the enlarged view, click **Send Back for Touchups** to re-process
 
 ## Configuration
 
-- **API Key**: Stored in `~/.config/nano-whiteboard-doctor/config.json`
+- **API Key**: Stored in `~/.config/whiteboard-makeover/config.json`
 - **Output Format**: PNG (default), JPEG, or WebP
 - **Resolution**: 0.5K, 1K (default), 2K, or 4K
 - **Aspect Ratio**: Auto (default), 1:1, 4:3, 16:9, and more
+
+Existing config from `~/.config/nano-whiteboard-doctor/` is automatically migrated on first run.
 
 ## Building the .deb
 

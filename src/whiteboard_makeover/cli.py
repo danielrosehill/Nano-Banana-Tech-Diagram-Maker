@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI for Nano Whiteboard Doctor - process whiteboard images from the command line."""
+"""CLI for Whiteboard Makeover - process whiteboard images from the command line."""
 
 import argparse
 import sys
@@ -32,7 +32,7 @@ def cli_main():
     preset_keys = [p[0] for p in PROMPT_PRESETS]
 
     parser = argparse.ArgumentParser(
-        prog="nano-whiteboard-doctor",
+        prog="whiteboard-makeover",
         description="Clean up whiteboard photos using Fal AI Nano Banana 2",
     )
     parser.add_argument(

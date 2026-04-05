@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Nano Whiteboard Doctor - Clean up whiteboard photos with Fal AI Nano Banana 2."""
+"""Whiteboard Makeover - Clean up whiteboard photos with Fal AI Nano Banana 2."""
 
 import base64
 import json
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import unquote
 
 import requests
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
@@ -18,9 +20,22 @@ from PyQt6.QtWidgets import (
     QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
-CONFIG_DIR = Path.home() / ".config" / "nano-whiteboard-doctor"
+# --- Config ---
+
+OLD_CONFIG_DIR = Path.home() / ".config" / "nano-whiteboard-doctor"
+CONFIG_DIR = Path.home() / ".config" / "whiteboard-makeover"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-CONFIG_VERSION = 2  # bump to force default migration
+CONFIG_VERSION = 3
+
+
+def _migrate_config_dir():
+    """One-time migration from old config directory name."""
+    if OLD_CONFIG_DIR.is_dir() and not CONFIG_DIR.exists():
+        shutil.copytree(str(OLD_CONFIG_DIR), str(CONFIG_DIR))
+        (OLD_CONFIG_DIR / ".migrated_to_whiteboard_makeover").touch()
+
+
+_migrate_config_dir()
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
@@ -383,6 +398,68 @@ FAL_SYNC_URL = "https://fal.run/fal-ai/nano-banana-2/edit"
 # Queue endpoint - for fallback/polling
 FAL_QUEUE_URL = "https://queue.fal.run/fal-ai/nano-banana-2/edit"
 
+# --- Help content ---
+
+HELP_HTML = """
+<h2>Whiteboard Makeover - How to Use</h2>
+
+<h3>Adding Images</h3>
+<p>There are three ways to add whiteboard photos:</p>
+<ul>
+  <li><b>Drag and drop</b> files or folders directly onto the image area</li>
+  <li><b>Add Images</b> button to browse and select individual files</li>
+  <li><b>Add Folder</b> button to add all images from a directory</li>
+</ul>
+<p>Supported formats: PNG, JPG, JPEG, WebP, BMP</p>
+
+<h3>Word Dictionary</h3>
+<p><b>Double-click</b> any input image to open the Word Dictionary for that image.
+This lets you tell the AI about specific words, names, or technical terms that appear
+in your whiteboard. The AI will use these exact spellings instead of guessing.</p>
+<p>Example: If your whiteboard mentions "Proxmox" or "Kubernetes", add those words
+so they aren't misread as "Proxknox" or "Kubernites".</p>
+<p>Images with dictionary words show a <b>[dict]</b> indicator.</p>
+
+<h3>Style Presets</h3>
+<p>Choose from 24+ built-in style presets across categories:</p>
+<ul>
+  <li><b>Professional</b> - Clean &amp; Polished, Corporate Clean, Minimalist Mono, etc.</li>
+  <li><b>Creative</b> - Neon Sign, Comic Book, Pixel Art, Watercolor, etc.</li>
+  <li><b>Technical</b> - Blueprint, Terminal Hacker, Dark Mode, etc.</li>
+  <li><b>Retro &amp; Fun</b> - Chalkboard, Synthwave, Psychedelic, etc.</li>
+  <li><b>Language</b> - Bilingual Hebrew, Translated Hebrew</li>
+</ul>
+<p>Each preset sets a recommended aspect ratio which you can override.</p>
+
+<h3>Output Settings</h3>
+<ul>
+  <li><b>Format</b> - PNG, JPEG, or WebP</li>
+  <li><b>Resolution</b> - 0.5K, 1K, 2K, or 4K</li>
+  <li><b>Variants</b> - Generate 1-4 different outputs per input image</li>
+  <li><b>Aspect Ratio</b> - Auto or a fixed ratio like 16:9, 4:3, etc.</li>
+</ul>
+
+<h3>Processing</h3>
+<p>Click <b>Process</b> to start. An animated indicator shows progress for each image.
+Processing typically takes 10-30 seconds per image depending on resolution.</p>
+<p>Results are saved to a <b>processed/</b> subfolder next to the original images.</p>
+
+<h3>Viewing Results</h3>
+<p><b>Click any result thumbnail</b> to open an enlarged view. From the enlarged view
+you can:</p>
+<ul>
+  <li><b>Send Back for Touchups</b> - re-process the original image (creates a new
+  version like <code>_edited_v2</code>)</li>
+  <li><b>Open in file manager</b> via the Open Output Folder button</li>
+</ul>
+
+<h3>CLI Mode</h3>
+<p>Run from the command line for batch processing:</p>
+<pre>whiteboard-makeover image1.jpg image2.jpg --preset blueprint
+whiteboard-makeover folder/ --format webp --resolution 2K
+whiteboard-makeover --list-presets</pre>
+"""
+
 
 def load_config():
     if CONFIG_FILE.exists():
@@ -390,14 +467,9 @@ def load_config():
             cfg = json.load(f)
     else:
         cfg = {}
-    # Migrate old configs that lack version
     if cfg.get("config_version", 0) < CONFIG_VERSION:
         cfg.setdefault("color", True)
         cfg.setdefault("handwritten", True)
-        if cfg.get("color") is False and "config_version" not in cfg:
-            cfg["color"] = True
-        if cfg.get("handwritten") is False and "config_version" not in cfg:
-            cfg["handwritten"] = True
         cfg["config_version"] = CONFIG_VERSION
         save_config(cfg)
     return cfg
@@ -437,16 +509,13 @@ def call_fal_api(img_path: str, api_key: str, prompt: str,
     if aspect_ratio and aspect_ratio != "auto":
         payload["aspect_ratio"] = aspect_ratio
 
-    # Try synchronous endpoint first
     resp = requests.post(FAL_SYNC_URL, headers=headers, json=payload, timeout=300)
     resp.raise_for_status()
     result = resp.json()
 
-    # If we got images directly, return them
     if "images" in result and result["images"]:
         return result["images"]
 
-    # If we got a queue response, poll for result
     request_id = result.get("request_id")
     if not request_id:
         return []
@@ -454,7 +523,7 @@ def call_fal_api(img_path: str, api_key: str, prompt: str,
     result_url = f"{FAL_QUEUE_URL}/requests/{request_id}"
     status_url = f"{FAL_QUEUE_URL}/requests/{request_id}/status"
 
-    for _ in range(120):  # up to ~4 minutes
+    for _ in range(120):
         time.sleep(2)
         status_resp = requests.get(status_url, headers=headers, timeout=30)
         status_resp.raise_for_status()
@@ -471,20 +540,22 @@ def call_fal_api(img_path: str, api_key: str, prompt: str,
 
 class ProcessWorker(QThread):
     progress = pyqtSignal(int, int, str)
-    image_saved = pyqtSignal(str)  # emitted per output file for live thumbnails
-    finished = pyqtSignal(list)  # list of output file paths
+    image_started = pyqtSignal(str)
+    image_saved = pyqtSignal(str, str)  # (output_path, source_path)
+    finished = pyqtSignal(list)
     error = pyqtSignal(str, str)
 
-    def __init__(self, image_paths, api_key, prompt, output_format, resolution,
-                 num_images, aspect_ratio):
+    def __init__(self, image_paths, api_key, prompts, output_format, resolution,
+                 num_images, aspect_ratio, output_suffixes=None):
         super().__init__()
         self.image_paths = image_paths
         self.api_key = api_key
-        self.prompt = prompt
+        self.prompts = prompts
         self.output_format = output_format
         self.resolution = resolution
         self.num_images = num_images
         self.aspect_ratio = aspect_ratio
+        self.output_suffixes = output_suffixes or [None] * len(image_paths)
 
     def run(self):
         total = len(self.image_paths)
@@ -494,10 +565,11 @@ class ProcessWorker(QThread):
             p = Path(img_path)
             name = p.stem
             self.progress.emit(i, total, name)
+            self.image_started.emit(img_path)
 
             try:
                 images = call_fal_api(
-                    img_path, self.api_key, self.prompt,
+                    img_path, self.api_key, self.prompts[i],
                     self.output_format, self.resolution, self.num_images,
                     self.aspect_ratio,
                 )
@@ -506,21 +578,26 @@ class ProcessWorker(QThread):
                     self.error.emit(name, "No output image returned")
                     continue
 
-                # Save to processed/ subfolder
                 out_dir = p.parent / "processed"
                 out_dir.mkdir(exist_ok=True)
+
+                custom_suffix = self.output_suffixes[i]
 
                 for j, img_data in enumerate(images):
                     img_url = img_data["url"]
                     img_resp = requests.get(img_url, timeout=60)
                     img_resp.raise_for_status()
 
-                    suffix = "_edited" if len(images) == 1 else f"_edited_{j + 1}"
+                    if custom_suffix:
+                        suffix = custom_suffix if len(images) == 1 else f"{custom_suffix}_{j + 1}"
+                    else:
+                        suffix = "_edited" if len(images) == 1 else f"_edited_{j + 1}"
+
                     out_path = out_dir / f"{name}{suffix}.{self.output_format}"
                     with open(out_path, "wb") as f:
                         f.write(img_resp.content)
                     output_paths.append(str(out_path))
-                    self.image_saved.emit(str(out_path))
+                    self.image_saved.emit(str(out_path), img_path)
 
             except requests.exceptions.HTTPError as e:
                 error_body = ""
@@ -535,6 +612,15 @@ class ProcessWorker(QThread):
 
         self.progress.emit(total, total, "")
         self.finished.emit(output_paths)
+
+
+class ClickableLabel(QLabel):
+    """QLabel that emits a clicked signal."""
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class DropListWidget(QListWidget):
@@ -554,32 +640,60 @@ class DropListWidget(QListWidget):
         self.setMovement(QListWidget.Movement.Static)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasUrls() or event.mimeData().hasText():
             event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasUrls() or event.mimeData().hasText():
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
 
+    def _resolve_local_path(self, url):
+        """Extract a local file path from a QUrl, with Wayland fallbacks."""
+        local = url.toLocalFile()
+        if local:
+            return local
+        raw = url.toString()
+        if raw.startswith("file://"):
+            return unquote(raw[7:])
+        return None
+
     def dropEvent(self, event: QDropEvent):
         paths = []
-        for url in event.mimeData().urls():
-            p = Path(url.toLocalFile())
-            if p.is_dir():
-                for f in sorted(p.iterdir()):
-                    if f.suffix.lower() in IMAGE_EXTS and not f.stem.endswith("_edited"):
-                        paths.append(str(f))
-            elif p.is_file() and p.suffix.lower() in IMAGE_EXTS:
-                paths.append(str(p))
+        urls = event.mimeData().urls()
+        if not urls and event.mimeData().hasText():
+            # Some Wayland file managers send plain text URIs
+            for line in event.mimeData().text().strip().splitlines():
+                line = line.strip()
+                if line.startswith("file://"):
+                    local = unquote(line[7:])
+                    p = Path(local)
+                    if p.is_dir():
+                        for f in sorted(p.iterdir()):
+                            if f.suffix.lower() in IMAGE_EXTS and not f.stem.endswith("_edited"):
+                                paths.append(str(f))
+                    elif p.is_file() and p.suffix.lower() in IMAGE_EXTS:
+                        paths.append(str(p))
+        else:
+            for url in urls:
+                local = self._resolve_local_path(url)
+                if not local:
+                    continue
+                p = Path(local)
+                if p.is_dir():
+                    for f in sorted(p.iterdir()):
+                        if f.suffix.lower() in IMAGE_EXTS and not f.stem.endswith("_edited"):
+                            paths.append(str(f))
+                elif p.is_file() and p.suffix.lower() in IMAGE_EXTS:
+                    paths.append(str(p))
         if paths:
             self.files_dropped.emit(paths)
             event.acceptProposedAction()
 
-    def add_image(self, path: str):
+    def add_image(self, path: str, has_dict=False):
         """Add an image with a thumbnail icon."""
         pixmap = QPixmap(path)
         if pixmap.isNull():
@@ -590,7 +704,10 @@ class DropListWidget(QListWidget):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             ))
-        item = QListWidgetItem(icon, Path(path).name)
+        label = Path(path).name
+        if has_dict:
+            label += " [dict]"
+        item = QListWidgetItem(icon, label)
         item.setSizeHint(QSize(120, 130))
         self.addItem(item)
 
@@ -677,10 +794,167 @@ class SettingsDialog(QDialog):
         }
 
 
+class DictionaryDialog(QDialog):
+    """Dialog for adding/removing words the AI should spell correctly."""
+
+    def __init__(self, image_path, current_words=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Word Dictionary - {Path(image_path).name}")
+        self.setMinimumWidth(420)
+        self.setMinimumHeight(350)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        info = QLabel(
+            "Add words, names, or technical terms that appear on this whiteboard. "
+            "The AI will use these exact spellings instead of guessing."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: gray; font-size: 11px;")
+        layout.addWidget(info)
+
+        # Input row
+        input_row = QHBoxLayout()
+        self.word_entry = QLineEdit()
+        self.word_entry.setPlaceholderText("Type a word and press Enter...")
+        self.word_entry.returnPressed.connect(self._add_word)
+        input_row.addWidget(self.word_entry)
+        add_btn = QPushButton("Add")
+        add_btn.clicked.connect(self._add_word)
+        input_row.addWidget(add_btn)
+        layout.addLayout(input_row)
+
+        # Word list
+        self.word_list = QListWidget()
+        self.word_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        if current_words:
+            for w in current_words:
+                self.word_list.addItem(w)
+        layout.addWidget(self.word_list)
+
+        # Remove button
+        remove_btn = QPushButton("Remove Selected")
+        remove_btn.clicked.connect(self._remove_selected)
+        remove_row = QHBoxLayout()
+        remove_row.addStretch()
+        remove_row.addWidget(remove_btn)
+        layout.addLayout(remove_row)
+
+        # OK / Cancel
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _add_word(self):
+        word = self.word_entry.text().strip()
+        if word:
+            existing = [self.word_list.item(i).text() for i in range(self.word_list.count())]
+            if word not in existing:
+                self.word_list.addItem(word)
+            self.word_entry.clear()
+
+    def _remove_selected(self):
+        for item in reversed(self.word_list.selectedItems()):
+            self.word_list.takeItem(self.word_list.row(item))
+
+    def get_words(self):
+        return [self.word_list.item(i).text() for i in range(self.word_list.count())]
+
+
+class ImageViewDialog(QDialog):
+    """Full-size image viewer with touchup option."""
+
+    touchup_requested = pyqtSignal(str)
+
+    def __init__(self, image_path, source_path=None, parent=None):
+        super().__init__(parent)
+        self.image_path = image_path
+        self.source_path = source_path
+        self.setWindowTitle(Path(image_path).name)
+        self.setMinimumSize(600, 400)
+
+        screen = self.screen().geometry() if self.screen() else None
+        if screen:
+            self.resize(int(screen.width() * 0.8), int(screen.height() * 0.8))
+        else:
+            self.resize(1200, 800)
+
+        layout = QVBoxLayout(self)
+
+        # Image in scroll area
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pixmap = QPixmap(image_path)
+        if not pixmap.isNull():
+            max_w = self.width() - 40
+            max_h = self.height() - 120
+            self.image_label.setPixmap(pixmap.scaled(
+                max_w, max_h,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+        scroll = QScrollArea()
+        scroll.setWidget(self.image_label)
+        scroll.setWidgetResizable(True)
+        layout.addWidget(scroll)
+
+        # Filename
+        name_label = QLabel(Path(image_path).name)
+        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_label.setStyleSheet("font-size: 12px; color: gray;")
+        layout.addWidget(name_label)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        if source_path:
+            touchup_btn = QPushButton("Send Back for Touchups")
+            touchup_btn.clicked.connect(self._request_touchup)
+            btn_row.addWidget(touchup_btn)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+    def _request_touchup(self):
+        self.touchup_requested.emit(self.image_path)
+        self.accept()
+
+
+class HelpDialog(QDialog):
+    """How to Use dialog."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("How to Use - Whiteboard Makeover")
+        self.setMinimumSize(650, 520)
+
+        layout = QVBoxLayout(self)
+        text = QLabel(HELP_HTML)
+        text.setWordWrap(True)
+        text.setTextFormat(Qt.TextFormat.RichText)
+
+        scroll = QScrollArea()
+        scroll.setWidget(text)
+        scroll.setWidgetResizable(True)
+        layout.addWidget(scroll)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Nano Whiteboard Doctor")
+        self.setWindowTitle("Whiteboard Makeover")
         self.setMinimumSize(900, 600)
         self.resize(1050, 720)
 
@@ -688,6 +962,14 @@ class MainWindow(QMainWindow):
         self.image_paths = []
         self.worker = None
         self._output_paths = []
+        self._output_to_source = {}
+        self._image_dictionaries = {}
+
+        # Animation timer for processing status
+        self._anim_timer = QTimer()
+        self._anim_timer.timeout.connect(self._animate_status)
+        self._anim_dots = 0
+        self._anim_base_text = ""
 
         self._build_ui()
         self._build_menu()
@@ -697,14 +979,23 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self):
         menu = self.menuBar()
-        settings_menu = menu.addMenu("File")
+        file_menu = menu.addMenu("File")
         settings_action = QAction("Settings...", self)
         settings_action.triggered.connect(self._open_settings)
-        settings_menu.addAction(settings_action)
-        settings_menu.addSeparator()
+        file_menu.addAction(settings_action)
+        file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(self.close)
-        settings_menu.addAction(quit_action)
+        file_menu.addAction(quit_action)
+
+        help_menu = menu.addMenu("Help")
+        how_to_action = QAction("How to Use", self)
+        how_to_action.triggered.connect(self._show_help)
+        help_menu.addAction(how_to_action)
+
+    def _show_help(self):
+        dialog = HelpDialog(self)
+        dialog.exec()
 
     def _build_ui(self):
         central = QWidget()
@@ -713,7 +1004,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
 
-        title = QLabel("Nano Whiteboard Doctor")
+        title = QLabel("Whiteboard Makeover")
         font = title.font()
         font.setPointSize(18)
         font.setBold(True)
@@ -730,6 +1021,7 @@ class MainWindow(QMainWindow):
 
         self.image_list = DropListWidget()
         self.image_list.files_dropped.connect(self._on_files_dropped)
+        self.image_list.itemDoubleClicked.connect(self._open_dictionary)
         img_layout.addWidget(self.image_list)
 
         btn_row = QHBoxLayout()
@@ -743,6 +1035,10 @@ class MainWindow(QMainWindow):
             btn_row.addWidget(btn)
         btn_row.addStretch()
         img_layout.addLayout(btn_row)
+
+        dict_hint = QLabel("Double-click an image to add a word dictionary")
+        dict_hint.setStyleSheet("color: gray; font-size: 10px;")
+        img_layout.addWidget(dict_hint)
 
         content.addWidget(img_group, stretch=3)
 
@@ -760,7 +1056,6 @@ class MainWindow(QMainWindow):
         current_idx = 0
         for cat in PRESET_CATEGORIES:
             self.preset_combo.addItem(f"--- {cat} ---")
-            # Make category headers non-selectable
             model = self.preset_combo.model()
             item = model.item(idx)
             item.setEnabled(False)
@@ -861,12 +1156,13 @@ class MainWindow(QMainWindow):
         bottom.addWidget(self.progress_bar, stretch=1)
 
         self.status_label = QLabel("Ready")
+        self.status_label.setMinimumWidth(220)
         bottom.addWidget(self.status_label)
 
         root.addLayout(bottom)
 
-        # Results area (live thumbnails + open folder + new job)
-        self.results_group = QGroupBox("Results")
+        # Results area
+        self.results_group = QGroupBox("Results (click to enlarge)")
         results_layout = QVBoxLayout(self.results_group)
 
         self.results_scroll = QScrollArea()
@@ -895,6 +1191,8 @@ class MainWindow(QMainWindow):
 
         self._last_output_dir = None
 
+    # --- Aspect ratio ---
+
     def _select_aspect_ratio(self, ratio):
         for ar, btn in self.ar_buttons.items():
             btn.setChecked(ar == ratio)
@@ -905,9 +1203,10 @@ class MainWindow(QMainWindow):
                 return ar
         return "auto"
 
+    # --- Preset ---
+
     def _on_preset_changed(self, index):
         self._update_preset_desc()
-        # Update aspect ratio to preset default
         key = self.preset_combo.currentData()
         if key and key != "custom" and key in PRESET_BY_KEY:
             default_ar = PRESET_BY_KEY[key][4]
@@ -929,12 +1228,20 @@ class MainWindow(QMainWindow):
             return PRESET_BY_KEY[key][3]
         return self.config_data.get("custom_prompt", PROMPT_PRESETS[0][3])
 
+    # --- Animation ---
+
+    def _animate_status(self):
+        self._anim_dots = (self._anim_dots + 1) % 4
+        dots = "." * (self._anim_dots + 1)
+        self.status_label.setText(f"{self._anim_base_text}{dots}")
+
+    # --- File/folder actions ---
+
     def _open_output_folder(self):
         if self._last_output_dir and Path(self._last_output_dir).is_dir():
             subprocess.Popen(["xdg-open", self._last_output_dir])
 
     def _new_job(self):
-        """Clear results and reset for a new batch."""
         self._clear_results()
         self.results_group.setVisible(False)
         self.progress_bar.setValue(0)
@@ -946,6 +1253,7 @@ class MainWindow(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
         self._output_paths.clear()
+        self._output_to_source.clear()
 
     def _open_settings(self):
         dialog = SettingsDialog(self.config_data, self)
@@ -962,7 +1270,8 @@ class MainWindow(QMainWindow):
         for p in paths:
             if p not in self.image_paths:
                 self.image_paths.append(p)
-                self.image_list.add_image(p)
+                has_dict = p in self._image_dictionaries and bool(self._image_dictionaries[p])
+                self.image_list.add_image(p, has_dict=has_dict)
 
     def _add_images(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -987,11 +1296,53 @@ class MainWindow(QMainWindow):
         for item in reversed(self.image_list.selectedItems()):
             idx = self.image_list.row(item)
             self.image_list.takeItem(idx)
-            self.image_paths.pop(idx)
+            removed = self.image_paths.pop(idx)
+            self._image_dictionaries.pop(removed, None)
 
     def _clear_all(self):
         self.image_list.clear()
         self.image_paths.clear()
+        self._image_dictionaries.clear()
+
+    # --- Dictionary ---
+
+    def _open_dictionary(self, item):
+        idx = self.image_list.row(item)
+        if idx < 0 or idx >= len(self.image_paths):
+            return
+        path = self.image_paths[idx]
+        current = self._image_dictionaries.get(path, [])
+        dialog = DictionaryDialog(path, current, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            words = dialog.get_words()
+            if words:
+                self._image_dictionaries[path] = words
+            elif path in self._image_dictionaries:
+                del self._image_dictionaries[path]
+            label = Path(path).name
+            if words:
+                label += " [dict]"
+            item.setText(label)
+
+    # --- Processing ---
+
+    def _build_prompts(self):
+        """Build a per-image prompt list, injecting dictionary words where present."""
+        base_prompt = self._get_active_prompt()
+        prompts = []
+        for img_path in self.image_paths:
+            words = self._image_dictionaries.get(img_path, [])
+            if words:
+                word_list = ", ".join(words)
+                prompt = (
+                    base_prompt +
+                    f"\n\nThe following specific terms appear in this whiteboard and "
+                    f"should be spelled exactly as listed: {word_list}"
+                )
+            else:
+                prompt = base_prompt
+            prompts.append(prompt)
+        return prompts
 
     def _start_processing(self):
         if self.worker and self.worker.isRunning():
@@ -1021,10 +1372,17 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(len(self.image_paths))
 
+        # Start animation
+        self._anim_base_text = "Working on it"
+        self._anim_dots = 0
+        self._anim_timer.start(400)
+
+        prompts = self._build_prompts()
+
         self.worker = ProcessWorker(
             list(self.image_paths),
             self.config_data["api_key"],
-            self._get_active_prompt(),
+            prompts,
             self.config_data.get("output_format", "png"),
             self.config_data.get("resolution", "1K"),
             self.config_data.get("num_images", 1),
@@ -1039,28 +1397,90 @@ class MainWindow(QMainWindow):
     def _on_progress(self, current, total, name):
         self.progress_bar.setValue(current)
         if name:
-            self.status_label.setText(f"Processing {current + 1}/{total}: {name}")
+            self._anim_base_text = f"Working on {current + 1}/{total}: {name}"
+            self._anim_dots = 0
 
-    def _on_image_saved(self, path):
+    def _on_image_saved(self, path, source_path):
         """Show each output thumbnail live as it arrives."""
         self._output_paths.append(path)
+        self._output_to_source[path] = source_path
         self._last_output_dir = str(Path(path).parent)
         pixmap = QPixmap(path)
         if not pixmap.isNull():
-            thumb = QLabel()
+            thumb = ClickableLabel()
+            thumb.setCursor(Qt.CursorShape.PointingHandCursor)
             thumb.setPixmap(pixmap.scaled(
                 120, 120,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             ))
-            thumb.setToolTip(Path(path).name)
+            thumb.setToolTip(f"{Path(path).name} (click to enlarge)")
             thumb.setStyleSheet("border: 1px solid #ccc; padding: 2px;")
+            thumb.clicked.connect(lambda p=path: self._show_enlarged(p))
             self.results_thumb_layout.addWidget(thumb)
+
+    def _show_enlarged(self, output_path):
+        source = self._output_to_source.get(output_path)
+        dialog = ImageViewDialog(output_path, source_path=source, parent=self)
+        dialog.touchup_requested.connect(self._touchup_image)
+        dialog.exec()
+
+    def _touchup_image(self, output_path):
+        """Re-process the original source image with a versioned suffix."""
+        source_path = self._output_to_source.get(output_path)
+        if not source_path:
+            QMessageBox.warning(self, "Error", "Original source image not found.")
+            return
+
+        stem = Path(source_path).stem
+        out_dir = Path(source_path).parent / "processed"
+        fmt = self.format_combo.currentText()
+        version = 2
+        while (out_dir / f"{stem}_edited_v{version}.{fmt}").exists():
+            version += 1
+        suffix = f"_edited_v{version}"
+
+        # Build prompt with dictionary if set
+        base_prompt = self._get_active_prompt()
+        words = self._image_dictionaries.get(source_path, [])
+        if words:
+            word_list = ", ".join(words)
+            prompt = (
+                base_prompt +
+                f"\n\nThe following specific terms appear in this whiteboard and "
+                f"should be spelled exactly as listed: {word_list}"
+            )
+        else:
+            prompt = base_prompt
+
+        self.process_btn.setEnabled(False)
+        self._anim_base_text = f"Touchup: {Path(source_path).name}"
+        self._anim_dots = 0
+        self._anim_timer.start(400)
+        self.progress_bar.setMaximum(1)
+        self.progress_bar.setValue(0)
+
+        self.worker = ProcessWorker(
+            [source_path],
+            self.config_data["api_key"],
+            [prompt],
+            fmt,
+            self.config_data.get("resolution", "1K"),
+            self.config_data.get("num_images", 1),
+            self._get_selected_aspect_ratio(),
+            output_suffixes=[suffix],
+        )
+        self.worker.progress.connect(self._on_progress)
+        self.worker.image_saved.connect(self._on_image_saved)
+        self.worker.error.connect(self._on_error)
+        self.worker.finished.connect(self._on_finished)
+        self.worker.start()
 
     def _on_error(self, name, error_msg):
         QMessageBox.critical(self, "Error", f"Failed to process {name}:\n{error_msg}")
 
     def _on_finished(self, output_paths):
+        self._anim_timer.stop()
         self.process_btn.setEnabled(True)
         count = len(output_paths)
         self.status_label.setText(f"Done! {count} output(s) saved.")
