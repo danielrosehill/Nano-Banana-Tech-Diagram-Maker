@@ -113,11 +113,11 @@ server.tool(
     style: z.string().default("clean_polished").describe("Visual style preset key (use list_styles to see options)"),
     dictionary_words: z.array(z.string()).optional().describe("Words/terms to spell correctly (e.g. ['Kubernetes', 'Proxmox'])"),
     output_format: z.enum(["png", "jpeg", "webp"]).default("png").describe("Output format"),
-    resolution: z.enum(["0.5K", "1K", "2K", "4K"]).default("1K").describe("Output resolution (default: 1K)"),
     aspect_ratio: z.string().default("auto").describe("Aspect ratio - auto, 1:1, 4:3, 16:9, 9:16, 3:2, 2:3, 21:9, 9:21"),
     download_to: z.string().optional().describe("Optional local path to also save the image. If omitted, only the fal.media URL is returned."),
   },
-  async ({ image_path, style, dictionary_words, output_format, resolution, aspect_ratio, download_to }) => {
+  async ({ image_path, style, dictionary_words, output_format, aspect_ratio, download_to }) => {
+    const resolution = "1K";
     const apiKey = getApiKey();
 
     const stylePreset = STYLE_BY_KEY.get(style);
@@ -148,11 +148,11 @@ server.tool(
     diagram_type: z.string().optional().describe("Diagram type key (use list_diagram_types to see options)"),
     dictionary_words: z.array(z.string()).optional().describe("Words/terms to spell correctly"),
     output_format: z.enum(["png", "jpeg", "webp"]).default("png").describe("Output format"),
-    resolution: z.enum(["0.5K", "1K", "2K", "4K"]).default("1K").describe("Output resolution (default: 1K)"),
     aspect_ratio: z.string().default("auto").describe("Aspect ratio - auto, 1:1, 4:3, 16:9, 9:16, 3:2, 2:3, 21:9, 9:21"),
     download_to: z.string().optional().describe("Optional local path to also save the image. If omitted, only the fal.media URL is returned."),
   },
-  async ({ image_path, prompt, style, diagram_type, dictionary_words, output_format, resolution, aspect_ratio, download_to }) => {
+  async ({ image_path, prompt, style, diagram_type, dictionary_words, output_format, aspect_ratio, download_to }) => {
+    const resolution = "1K";
     const apiKey = getApiKey();
 
     if (!prompt && !style && !diagram_type) {
@@ -191,10 +191,10 @@ server.tool(
     diagram_type: z.string().optional().describe("Diagram type key (use list_diagram_types to see options)"),
     download_to: z.string().optional().describe("Optional local path to also save the image. If omitted, only the fal.media URL is returned."),
     output_format: z.enum(["png", "jpeg", "webp"]).default("png").describe("Output format"),
-    resolution: z.enum(["0.5K", "1K", "2K", "4K"]).default("1K").describe("Output resolution (default: 1K)"),
     aspect_ratio: z.string().default("auto").describe("Aspect ratio - auto, 1:1, 4:3, 16:9, 9:16, 3:2, 2:3, 21:9, 9:21"),
   },
-  async ({ prompt, style, diagram_type, download_to, output_format, resolution, aspect_ratio }) => {
+  async ({ prompt, style, diagram_type, download_to, output_format, aspect_ratio }) => {
+    const resolution = "1K";
     const apiKey = getApiKey();
 
     if (!prompt && !style && !diagram_type) {
