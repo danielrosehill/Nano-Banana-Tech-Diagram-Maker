@@ -231,14 +231,20 @@ export const DIAGRAM_TYPE_BY_KEY = new Map(DIAGRAM_TYPES.map((d) => [d.key, d]))
 
 // --- Image helpers ---
 
-function imageToDataUrl(filePath: string): string {
-  const ext = extname(filePath).toLowerCase().replace(".", "");
+async function imageToDataUrl(pathOrUrl: string): Promise<string> {
+  // HTTP(S) URLs (e.g. presigned s3-stage links from a remote workstation):
+  // pass straight through — fal accepts URLs in image_urls, so no need to
+  // re-encode as base64. Saves bandwidth and works without local file access.
+  if (/^https?:\/\//i.test(pathOrUrl)) {
+    return pathOrUrl;
+  }
+  const ext = extname(pathOrUrl).toLowerCase().replace(".", "");
   const mimeMap: Record<string, string> = {
     jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
     webp: "image/webp", bmp: "image/bmp",
   };
   const mime = mimeMap[ext] || "image/png";
-  const b64 = readFileSync(filePath).toString("base64");
+  const b64 = readFileSync(pathOrUrl).toString("base64");
   return `data:${mime};base64,${b64}`;
 }
 
@@ -288,7 +294,7 @@ export async function callFalImg2Img(
   outputFormat = "png", resolution = "1K", numImages = 1, aspectRatio = "auto",
 ): Promise<FalImage[]> {
   const headers = { Authorization: `Key ${apiKey}`, "Content-Type": "application/json" };
-  const dataUrl = imageToDataUrl(imagePath);
+  const dataUrl = await imageToDataUrl(imagePath);
   const payload: Record<string, unknown> = {
     prompt, image_urls: [dataUrl], output_format: outputFormat,
     resolution, num_images: numImages,

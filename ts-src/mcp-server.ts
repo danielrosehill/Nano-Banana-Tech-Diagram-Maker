@@ -37,10 +37,24 @@ async function downloadImage(url: string, outPath: string): Promise<void> {
   writeFileSync(outPath, buffer);
 }
 
-const server = new McpServer({
-  name: "nano-tech-diagrams",
-  version: "0.4.0",
-});
+const server = new McpServer(
+  {
+    name: "nano-tech-diagrams",
+    version: "0.4.1",
+  },
+  {
+    instructions:
+      "REMOTE FILE TRANSFER POLICY: this server may run remotely from the user's workstation " +
+      "(e.g. when invoked over the residence MCP gateway). Local workstation image files are " +
+      "not directly accessible to the server process. The `image_path` parameter accepts EITHER " +
+      "a server-local filesystem path OR an HTTP(S) URL — for files on the user's workstation, " +
+      "have them run `s3-stage <path>` on the workstation to upload to MinIO and supply the " +
+      "returned presigned URL as `image_path`. Do not attempt to base64 the file yourself. " +
+      "Generated outputs are returned as `https://fal.media/...` URLs which the user can fetch " +
+      "with curl on their workstation; pass `download_to` only when the SERVER should also " +
+      "save a local copy.",
+  },
+);
 
 /**
  * Format a successful generation result. By default returns the fal.media URL
@@ -109,7 +123,7 @@ server.tool(
   "whiteboard_cleanup",
   "Clean up a whiteboard photo into a polished diagram using Nano Banana 2",
   {
-    image_path: z.string().describe("Path to the whiteboard photo"),
+    image_path: z.string().describe("Path to the whiteboard photo on the SERVER, or an HTTP(S) URL the server can fetch (use `s3-stage` on the workstation to get a presigned URL for a local file)."),
     style: z.string().default("clean_polished").describe("Visual style preset key (use list_styles to see options)"),
     dictionary_words: z.array(z.string()).optional().describe("Words/terms to spell correctly (e.g. ['Kubernetes', 'Proxmox'])"),
     output_format: z.enum(["png", "jpeg", "webp"]).default("png").describe("Output format"),
@@ -142,7 +156,7 @@ server.tool(
   "image_to_image",
   "Transform an existing image into a tech diagram using Nano Banana 2. At least one of prompt, style, or diagram_type must be provided.",
   {
-    image_path: z.string().describe("Path to the input image"),
+    image_path: z.string().describe("Path to the input image on the SERVER, or an HTTP(S) URL the server can fetch (use `s3-stage` on the workstation to get a presigned URL for a local file)."),
     prompt: z.string().default("").describe("Freehand description of desired transformation"),
     style: z.string().optional().describe("Visual style preset key (use list_styles to see options)"),
     diagram_type: z.string().optional().describe("Diagram type key (use list_diagram_types to see options)"),
