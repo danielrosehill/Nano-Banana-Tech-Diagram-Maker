@@ -40,7 +40,7 @@ async function downloadImage(url: string, outPath: string): Promise<void> {
 const server = new McpServer(
   {
     name: "nano-tech-diagrams",
-    version: "0.4.1",
+    version: "0.4.2",
   },
   {
     instructions:

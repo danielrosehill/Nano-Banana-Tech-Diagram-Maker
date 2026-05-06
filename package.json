@@ -1,6 +1,6 @@
 {
   "name": "nano-tech-diagrams",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "MCP server and library for creating and editing tech diagrams using Nano Banana 2 (via Fal AI). Supports text-to-image, image-to-image, whiteboard cleanup, and 28+ style presets.",
   "author": "Daniel Rosehill <public@danielrosehill.com>",
   "license": "MIT",
